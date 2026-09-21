@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>우리 학교 AI 분리수거 도우미</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f8f4;color:#173522;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif}
+.wrap{max-width:1000px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.logo{font-weight:900;font-size:20px}.badge{font-size:12px;background:#e1f3e6;padding:7px 10px;border-radius:99px;color:#176438}
+.hero{background:linear-gradient(135deg,#dff5e6,#fff);border:1px solid #d2e8d8;border-radius:28px;padding:30px;text-align:center}
+.hero h1{font-size:clamp(28px,6vw,46px);margin:8px 0}.hero p{color:#5b7061;line-height:1.6}
+.btn{border:0;border-radius:16px;padding:15px 20px;background:#20864b;color:white;font-weight:800;cursor:pointer;margin:5px}.btn.secondary{background:#fff;color:#176438;border:1px solid #bad8c3}
+input[type=file]{display:none}.preview{margin-top:18px;display:none}.preview img{max-width:100%;max-height:430px;border-radius:20px;object-fit:contain;background:#e9efea}
+.panel{background:white;border:1px solid #e0e9e2;border-radius:22px;padding:22px;margin-top:18px;box-shadow:0 7px 25px #15351e0b}
+.loading{text-align:center;padding:28px}.spinner{width:35px;height:35px;border:4px solid #dce9df;border-top-color:#20864b;border-radius:50%;animation:spin .8s linear infinite;margin:auto}@keyframes spin{to{transform:rotate(360deg)}}
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.label{font-size:12px;color:#6b7d70;font-weight:800}.big{font-size:30px;font-weight:900;margin:4px 0 15px}.tag{display:inline-block;padding:8px 12px;border-radius:99px;background:#e8f6ec;color:#176438;font-weight:800;margin:3px}
+.alert{padding:14px;border-radius:15px;background:#fff6dc;color:#6b5516;margin-top:12px;line-height:1.6}.no-trash{background:#eef3f5;color:#405563}
+ul{line-height:1.8}.confidence{height:10px;background:#e8eee9;border-radius:99px;overflow:hidden}.confidence i{display:block;height:100%;background:#20864b}
+@media(max-width:700px){.result-grid{grid-template-columns:1fr}.top{align-items:flex-start;gap:10px;flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="top"><div class="logo">♻️ 우리 학교 AI 분리수거 도우미</div><div class="badge">실제 AI 이미지 분석</div></div>
+
+<section class="hero">
+<div style="font-size:52px">📷</div>
+<h1>쓰레기를 찍어보세요</h1>
+<p>AI가 사진 속 대상을 먼저 확인하고, 쓰레기라면 <b>물체 이름 · 재질 · 분류 · 배출 방법</b>까지 설명합니다.<br>사람이나 쓰레기가 아닌 물체는 쓰레기로 억지 분류하지 않습니다.</p>
+<label class="btn">📷 사진 촬영 / 업로드<input id="file" type="file" accept="image/*" capture="environment"></label>
+<button class="btn secondary" id="reset">초기화</button>
+</section>
+
+<section class="preview panel" id="previewBox"><img id="preview"></section>
+<section class="panel loading" id="loading" style="display:none"><div class="spinner"></div><h3>AI가 사진을 분석하고 있어요</h3><p>쓰레기 여부 → 물체 → 재질 → 분리배출 방법 순서로 확인합니다.</p></section>
+
+<section class="panel" id="result" style="display:none"></section>
+
+<section class="panel">
+<h2>💡 중요한 안내</h2>
+<p>AI의 판단은 참고용입니다. 학교와 지자체의 실제 분리배출 기준이 다를 수 있으므로 최종 배출 시 학교의 안내를 우선하세요.</p>
+</section>
+</div>
+<script>
+const file=document.getElementById("file"), preview=document.getElementById("preview"), box=document.getElementById("previewBox");
+const loading=document.getElementById("loading"), result=document.getElementById("result");
+file.onchange=async()=>{const f=file.files[0];if(!f)return;if(!f.type.startsWith("image/"))return alert("이미지 파일만 올려주세요.");
+const reader=new FileReader();reader.onload=()=>{preview.src=reader.result;box.style.display="block";analyze(reader.result)};reader.readAsDataURL(f)};
+document.getElementById("reset").onclick=()=>{file.value="";box.style.display="none";loading.style.display="none";result.style.display="none";result.innerHTML=""};
+function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
+async function analyze(image){
+ loading.style.display="block";result.style.display="none";
+ try{
+  const r=await fetch("/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image})});
+  const d=await r.json(); if(!r.ok) throw new Error(d.error||"분석 실패");
+  render(d);
+ }catch(e){result.innerHTML=`<div class="alert">⚠️ ${esc(e.message)}<br><br>서버의 OPENAI_API_KEY 설정과 인터넷 연결을 확인해주세요.</div>`;result.style.display="block"}
+ finally{loading.style.display="none"}
+}
+function render(d){
+ const c=Math.max(0,Math.min(100,Number(d.confidence)||0));
+ if(!d.is_trash){
+  result.innerHTML=`<div class="label">판별 결과</div><div class="big">🚫 쓰레기가 아닌 것으로 판단돼요</div>
+  <span class="tag">${esc(d.object_name||"대상 확인")}</span>
+  <p>${esc(d.not_trash_reason||"사진 속 대상이 일반적인 폐기물로 보이지 않습니다.")}</p>
+  <div class="label">AI 확신도 ${c}%</div><div class="confidence"><i style="width:${c}%"></i></div>
+  ${d.warning?`<div class="alert">⚠️ ${esc(d.warning)}</div>`:""}`;
+ }else{
+  result.innerHTML=`<div class="result-grid"><div>
+  <div class="label">쓰레기 판별</div><div class="big">♻️ ${esc(d.object_name||"확인된 폐기물")}</div>
+  <span class="tag">재질: ${esc(d.material||"확인 어려움")}</span><span class="tag">분류: ${esc(d.category||"기타")}</span>
+  <h3>🗑️ 버릴 곳</h3><div class="big" style="font-size:22px">${esc(d.disposal_bin||"학교 기준 확인")}</div>
+  <div class="label">AI 확신도 ${c}%</div><div class="confidence"><i style="width:${c}%"></i></div>
+  </div><div><h3>🧪 재질과 물체 설명</h3><p>${esc(d.reason||"사진을 바탕으로 재질을 추정했습니다.")}</p>
+  <h3>✅ 배출 전 준비</h3><ul>${(d.preparation||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+  ${d.warning?`<div class="alert">⚠️ ${esc(d.warning)}</div>`:""}</div></div>`;
+ }
+}
+</script>
+</body></html>
